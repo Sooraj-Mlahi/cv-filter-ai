@@ -1,8 +1,17 @@
-import { FileText } from "lucide-react";
+import { FileText, LogOut } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAuth } from "@/hooks/useAuth";
+import type { User } from "@shared/schema";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const navigation = [
   { name: "Dashboard", path: "/" },
@@ -13,6 +22,21 @@ const navigation = [
 
 export function Header() {
   const [location] = useLocation();
+  const { user: userAuth, isAuthenticated } = useAuth();
+  const user = userAuth as User | undefined;
+
+  const handleLogout = () => {
+    window.location.href = "/api/logout";
+  };
+
+  // Don't show header if not authenticated
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  const initials = user?.firstName && user?.lastName
+    ? `${user.firstName[0]}${user.lastName[0]}`
+    : user?.email?.[0]?.toUpperCase() || "U";
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -42,11 +66,42 @@ export function Header() {
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Avatar className="h-8 w-8" data-testid="avatar-user">
-            <AvatarFallback className="bg-primary text-primary-foreground text-sm font-medium">
-              D
-            </AvatarFallback>
-          </Avatar>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="relative h-8 w-8 rounded-full" data-testid="button-user-menu">
+                <Avatar className="h-8 w-8">
+                  {user?.profileImageUrl && (
+                    <AvatarImage src={user.profileImageUrl} alt={user?.firstName || "User"} />
+                  )}
+                  <AvatarFallback className="bg-primary text-primary-foreground text-sm font-medium">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <div className="flex items-center justify-start gap-2 p-2">
+                <div className="flex flex-col space-y-1 leading-none">
+                  {user?.firstName && user?.lastName && (
+                    <p className="font-medium text-sm">{user.firstName} {user.lastName}</p>
+                  )}
+                  {user?.email && (
+                    <p className="text-xs text-muted-foreground">{user.email}</p>
+                  )}
+                </div>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={handleLogout}
+                className="text-destructive cursor-pointer"
+                data-testid="button-logout"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>

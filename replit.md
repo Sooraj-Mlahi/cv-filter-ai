@@ -4,6 +4,11 @@
 ResumeRank is a full-stack web application that helps HR professionals and recruiters automatically fetch, analyze, and rank candidate resumes using AI. Built with React, Express, and OpenAI API.
 
 ## Recent Changes (Nov 18, 2025)
+- **Authentication System**: Full Google OAuth via Replit Auth with session management
+  - PostgreSQL-backed sessions with user-scoped data access
+  - AuthProvider context for shared authentication state
+  - Protected routes and authenticated navigation
+  - User profile menu with logout functionality
 - Complete MVP implementation with all core features
 - Gmail and Outlook email integration for CV fetching
 - OpenAI-powered resume analysis and scoring
@@ -20,10 +25,11 @@ ResumeRank is a full-stack web application that helps HR professionals and recru
 - **Theme System**: Full dark/light mode with localStorage persistence
 
 ### Backend (Express + Node.js)
+- **Authentication**: Replit Auth for Google OAuth login with PostgreSQL sessions
 - **Email Integration**: Gmail API and Microsoft Graph API for fetching attachments
 - **CV Extraction**: pdf-parse and mammoth for text extraction from PDF/DOCX
 - **AI Analysis**: OpenAI GPT-4 for resume scoring and insights
-- **Storage**: In-memory storage with full CRUD operations
+- **Storage**: DatabaseStorage with PostgreSQL for user-scoped data persistence
 
 ### Key Technologies
 - React with wouter for routing
@@ -78,11 +84,12 @@ ResumeRank is a full-stack web application that helps HR professionals and recru
 - `REPL_IDENTITY` / `WEB_REPL_RENEWAL` - Auto-provided by Replit
 
 ## User Workflow
-1. **Connect Email**: Authorize Gmail or Outlook integration
-2. **Fetch CVs**: Import resume attachments from inbox
-3. **Define Role**: Enter job description and requirements
-4. **Analyze**: AI scores and ranks all candidates
-5. **Review**: View ranked results with insights
+1. **Sign In**: Authenticate with Google OAuth via Replit Auth
+2. **Connect Email**: Authorize Gmail or Outlook integration
+3. **Fetch CVs**: Import resume attachments from inbox
+4. **Define Role**: Enter job description and requirements
+5. **Analyze**: AI scores and ranks all candidates
+6. **Review**: View ranked results with insights
 
 ## Design Guidelines
 - Uses Inter font for modern, professional appearance

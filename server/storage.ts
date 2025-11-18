@@ -6,112 +6,138 @@ import {
   type FetchHistory,
   type InsertFetchHistory,
   type CVWithAnalysis,
-  type DashboardStats
+  type DashboardStats,
+  type User,
+  type UpsertUser,
+  users,
+  cvs,
+  analyses,
+  fetchHistory,
 } from "@shared/schema";
-import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IStorage {
-  // CV operations
+  // User operations (required by Replit Auth)
+  getUser(id: string): Promise<User | undefined>;
+  upsertUser(user: UpsertUser): Promise<User>;
+  
+  // CV operations (user-scoped)
   createCV(cv: InsertCV): Promise<CV>;
-  getAllCVs(): Promise<CV[]>;
-  getCVById(id: string): Promise<CV | undefined>;
+  getAllCVs(userId: string): Promise<CV[]>;
+  getCVById(id: string, userId: string): Promise<CV | undefined>;
+  deleteAllCVs(userId: string): Promise<void>;
   
-  // Analysis operations
+  // Analysis operations (user-scoped)
   createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
-  getAnalysesByJobDescription(jobDescription: string): Promise<Analysis[]>;
-  getAllAnalyses(): Promise<Analysis[]>;
+  getAnalysesByJobDescription(jobDescription: string, userId: string): Promise<Analysis[]>;
+  getAllAnalyses(userId: string): Promise<Analysis[]>;
+  deleteAllAnalyses(userId: string): Promise<void>;
   
-  // Fetch history operations
+  // Fetch history operations (user-scoped)
   createFetchHistory(history: InsertFetchHistory): Promise<FetchHistory>;
-  getAllFetchHistory(): Promise<FetchHistory[]>;
-  getLatestFetchBySource(source: string): Promise<FetchHistory | undefined>;
+  getAllFetchHistory(userId: string): Promise<FetchHistory[]>;
+  getLatestFetchBySource(source: string, userId: string): Promise<FetchHistory | undefined>;
   
-  // Combined queries
-  getCVsWithLatestAnalysis(): Promise<CVWithAnalysis[]>;
-  getDashboardStats(): Promise<DashboardStats>;
+  // Combined queries (user-scoped)
+  getCVsWithLatestAnalysis(userId: string): Promise<CVWithAnalysis[]>;
+  getDashboardStats(userId: string): Promise<DashboardStats>;
+  
+  // Account management
+  deleteUserAccount(userId: string): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
-  private cvs: Map<string, CV>;
-  private analyses: Map<string, Analysis>;
-  private fetchHistory: Map<string, FetchHistory>;
-
-  constructor() {
-    this.cvs = new Map();
-    this.analyses = new Map();
-    this.fetchHistory = new Map();
+export class DatabaseStorage implements IStorage {
+  // User operations (required by Replit Auth)
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
   }
 
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
+  }
+
+  // CV operations (user-scoped)
   async createCV(insertCV: InsertCV): Promise<CV> {
-    const id = randomUUID();
-    const cv: CV = {
-      ...insertCV,
-      id,
-      dateReceived: new Date(),
-      fileBuffer: insertCV.fileBuffer ?? null,
-    };
-    this.cvs.set(id, cv);
+    const [cv] = await db.insert(cvs).values(insertCV).returning();
     return cv;
   }
 
-  async getAllCVs(): Promise<CV[]> {
-    return Array.from(this.cvs.values());
+  async getAllCVs(userId: string): Promise<CV[]> {
+    return await db.select().from(cvs).where(eq(cvs.userId, userId));
   }
 
-  async getCVById(id: string): Promise<CV | undefined> {
-    return this.cvs.get(id);
+  async getCVById(id: string, userId: string): Promise<CV | undefined> {
+    const [cv] = await db.select().from(cvs).where(
+      and(eq(cvs.id, id), eq(cvs.userId, userId))
+    );
+    return cv || undefined;
   }
 
+  async deleteAllCVs(userId: string): Promise<void> {
+    await db.delete(cvs).where(eq(cvs.userId, userId));
+  }
+
+  // Analysis operations (user-scoped)
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<Analysis> {
-    const id = randomUUID();
-    const analysis: Analysis = {
+    const [analysis] = await db.insert(analyses).values({
       ...insertAnalysis,
-      id,
-      analyzedAt: new Date(),
-      strengths: insertAnalysis.strengths as string[],
-      weaknesses: insertAnalysis.weaknesses as string[],
-    };
-    this.analyses.set(id, analysis);
+      strengths: insertAnalysis.strengths as any,
+      weaknesses: insertAnalysis.weaknesses as any,
+    }).returning();
     return analysis;
   }
 
-  async getAnalysesByJobDescription(jobDescription: string): Promise<Analysis[]> {
-    return Array.from(this.analyses.values()).filter(
-      (a) => a.jobDescription === jobDescription
+  async getAnalysesByJobDescription(jobDescription: string, userId: string): Promise<Analysis[]> {
+    return await db.select().from(analyses).where(
+      and(eq(analyses.jobDescription, jobDescription), eq(analyses.userId, userId))
     );
   }
 
-  async getAllAnalyses(): Promise<Analysis[]> {
-    return Array.from(this.analyses.values());
+  async getAllAnalyses(userId: string): Promise<Analysis[]> {
+    return await db.select().from(analyses).where(eq(analyses.userId, userId));
   }
 
+  async deleteAllAnalyses(userId: string): Promise<void> {
+    await db.delete(analyses).where(eq(analyses.userId, userId));
+  }
+
+  // Fetch history operations (user-scoped)
   async createFetchHistory(insertHistory: InsertFetchHistory): Promise<FetchHistory> {
-    const id = randomUUID();
-    const history: FetchHistory = {
-      ...insertHistory,
-      id,
-      fetchedAt: new Date(),
-    };
-    this.fetchHistory.set(id, history);
+    const [history] = await db.insert(fetchHistory).values(insertHistory).returning();
     return history;
   }
 
-  async getAllFetchHistory(): Promise<FetchHistory[]> {
-    return Array.from(this.fetchHistory.values())
-      .sort((a, b) => new Date(b.fetchedAt).getTime() - new Date(a.fetchedAt).getTime());
+  async getAllFetchHistory(userId: string): Promise<FetchHistory[]> {
+    return await db.select().from(fetchHistory)
+      .where(eq(fetchHistory.userId, userId))
+      .orderBy(desc(fetchHistory.fetchedAt));
   }
 
-  async getLatestFetchBySource(source: string): Promise<FetchHistory | undefined> {
-    const sourceHistory = Array.from(this.fetchHistory.values())
-      .filter((h) => h.source.toLowerCase() === source.toLowerCase())
-      .sort((a, b) => new Date(b.fetchedAt).getTime() - new Date(a.fetchedAt).getTime());
-    
-    return sourceHistory[0];
+  async getLatestFetchBySource(source: string, userId: string): Promise<FetchHistory | undefined> {
+    const [history] = await db.select().from(fetchHistory)
+      .where(and(eq(fetchHistory.source, source), eq(fetchHistory.userId, userId)))
+      .orderBy(desc(fetchHistory.fetchedAt))
+      .limit(1);
+    return history || undefined;
   }
 
-  async getCVsWithLatestAnalysis(): Promise<CVWithAnalysis[]> {
-    const allCVs = await this.getAllCVs();
-    const allAnalyses = await this.getAllAnalyses();
+  // Combined queries (user-scoped)
+  async getCVsWithLatestAnalysis(userId: string): Promise<CVWithAnalysis[]> {
+    const allCVs = await this.getAllCVs(userId);
+    const allAnalyses = await this.getAllAnalyses(userId);
     
     // Group analyses by CV ID and get the latest one
     const latestAnalysesByCV = new Map<string, Analysis>();
@@ -139,9 +165,9 @@ export class MemStorage implements IStorage {
     });
   }
 
-  async getDashboardStats(): Promise<DashboardStats> {
-    const allCVs = await this.getAllCVs();
-    const allAnalyses = await this.getAllAnalyses();
+  async getDashboardStats(userId: string): Promise<DashboardStats> {
+    const allCVs = await this.getAllCVs(userId);
+    const allAnalyses = await this.getAllAnalyses(userId);
 
     const totalCVs = allCVs.length;
     
@@ -165,6 +191,12 @@ export class MemStorage implements IStorage {
       averageScore,
     };
   }
+
+  // Account management
+  async deleteUserAccount(userId: string): Promise<void> {
+    // Delete user (cascade will handle related records)
+    await db.delete(users).where(eq(users.id, userId));
+  }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

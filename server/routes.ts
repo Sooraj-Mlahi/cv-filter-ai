@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { setupAuth, isAuthenticated } from "./replitAuth";
 import { getUncachableGmailClient } from "./gmail-client";
 import { getUncachableOutlookClient } from "./outlook-client";
 import { extractTextFromCV, extractCandidateInfo } from "./cv-extractor";
@@ -8,10 +9,26 @@ import { analyzeCVWithOpenAI } from "./openai-service";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Get dashboard stats
-  app.get("/api/stats", async (req, res) => {
+  // Setup authentication
+  await setupAuth(app);
+
+  // Auth routes
+  app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
     try {
-      const stats = await storage.getDashboardStats();
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ error: "Failed to fetch user" });
+    }
+  });
+
+  // Get dashboard stats (protected)
+  app.get("/api/stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const stats = await storage.getDashboardStats(userId);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching stats:", error);
@@ -19,10 +36,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get fetch history
-  app.get("/api/fetch-history", async (req, res) => {
+  // Get fetch history (protected)
+  app.get("/api/fetch-history", isAuthenticated, async (req: any, res) => {
     try {
-      const history = await storage.getAllFetchHistory();
+      const userId = req.user.claims.sub;
+      const history = await storage.getAllFetchHistory(userId);
       res.json(history);
     } catch (error) {
       console.error("Error fetching history:", error);
@@ -30,15 +48,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get email provider status
-  app.get("/api/email-providers", async (req, res) => {
+  // Get email provider status (protected)
+  app.get("/api/email-providers", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const providers = [];
 
       // Check Gmail connection
       try {
         await getUncachableGmailClient();
-        const latestGmail = await storage.getLatestFetchBySource("gmail");
+        const latestGmail = await storage.getLatestFetchBySource("gmail", userId);
         providers.push({
           name: "Gmail",
           icon: "SiGmail",
@@ -58,7 +77,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check Outlook connection
       try {
         await getUncachableOutlookClient();
-        const latestOutlook = await storage.getLatestFetchBySource("outlook");
+        const latestOutlook = await storage.getLatestFetchBySource("outlook", userId);
         providers.push({
           name: "Outlook",
           icon: "Inbox",
@@ -82,9 +101,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Fetch CVs from email
-  app.post("/api/fetch-cvs", async (req, res) => {
+  // Fetch CVs from email (protected)
+  app.post("/api/fetch-cvs", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const schema = z.object({
         provider: z.enum(["gmail", "outlook"]),
       });
@@ -93,13 +113,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let count = 0;
 
       if (provider === "gmail") {
-        count = await fetchFromGmail();
+        count = await fetchFromGmail(userId);
       } else if (provider === "outlook") {
-        count = await fetchFromOutlook();
+        count = await fetchFromOutlook(userId);
       }
 
       // Create fetch history
       await storage.createFetchHistory({
+        userId,
         source: provider,
         cvsCount: count,
       });
@@ -113,16 +134,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Analyze CVs with AI
-  app.post("/api/analyze-cvs", async (req, res) => {
+  // Analyze CVs with AI (protected)
+  app.post("/api/analyze-cvs", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const schema = z.object({
         jobDescription: z.string().min(10),
       });
 
       const { jobDescription } = schema.parse(req.body);
 
-      const allCVs = await storage.getAllCVs();
+      const allCVs = await storage.getAllCVs(userId);
 
       if (allCVs.length === 0) {
         return res.status(400).json({ error: "No CVs available to analyze" });
@@ -139,6 +161,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
 
           await storage.createAnalysis({
+            userId,
             cvId: cv.id,
             jobDescription,
             score: analysis.score,
@@ -169,10 +192,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get analysis results
-  app.get("/api/results", async (req, res) => {
+  // Get analysis results (protected)
+  app.get("/api/results", isAuthenticated, async (req: any, res) => {
     try {
-      const results = await storage.getCVsWithLatestAnalysis();
+      const userId = req.user.claims.sub;
+      const results = await storage.getCVsWithLatestAnalysis(userId);
       res.json(results);
     } catch (error) {
       console.error("Error fetching results:", error);
@@ -180,14 +204,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get all analyses
-  app.get("/api/analyses", async (req, res) => {
+  // Get all analyses (protected)
+  app.get("/api/analyses", isAuthenticated, async (req: any, res) => {
     try {
-      const analyses = await storage.getAllAnalyses();
+      const userId = req.user.claims.sub;
+      const analyses = await storage.getAllAnalyses(userId);
       res.json(analyses);
     } catch (error) {
       console.error("Error fetching analyses:", error);
       res.status(500).json({ error: "Failed to fetch analyses" });
+    }
+  });
+
+  // Delete account (protected)
+  app.delete("/api/user/account", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await storage.deleteUserAccount(userId);
+      req.logout(() => {
+        res.json({ message: "Account deleted successfully" });
+      });
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      res.status(500).json({ error: "Failed to delete account" });
+    }
+  });
+
+  // Delete all CVs (protected)
+  app.delete("/api/user/cvs", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await storage.deleteAllCVs(userId);
+      res.json({ message: "All CVs deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting CVs:", error);
+      res.status(500).json({ error: "Failed to delete CVs" });
+    }
+  });
+
+  // Delete all analyses (protected)
+  app.delete("/api/user/analyses", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await storage.deleteAllAnalyses(userId);
+      res.json({ message: "All analyses deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting analyses:", error);
+      res.status(500).json({ error: "Failed to delete analyses" });
     }
   });
 
@@ -196,7 +259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 }
 
 // Helper function to fetch CVs from Gmail
-async function fetchFromGmail(): Promise<number> {
+async function fetchFromGmail(userId: string): Promise<number> {
   const gmail = await getUncachableGmailClient();
   let count = 0;
 
@@ -252,6 +315,7 @@ async function fetchFromGmail(): Promise<number> {
                 const { name, email } = extractCandidateInfo(extractedText, senderEmail);
 
                 await storage.createCV({
+                  userId,
                   candidateName: name,
                   candidateEmail: email,
                   fileName: part.filename,
@@ -280,7 +344,7 @@ async function fetchFromGmail(): Promise<number> {
 }
 
 // Helper function to fetch CVs from Outlook
-async function fetchFromOutlook(): Promise<number> {
+async function fetchFromOutlook(userId: string): Promise<number> {
   const outlook = await getUncachableOutlookClient();
   let count = 0;
 
@@ -322,6 +386,7 @@ async function fetchFromOutlook(): Promise<number> {
                 const { name, email } = extractCandidateInfo(extractedText, senderEmail);
 
                 await storage.createCV({
+                  userId,
                   candidateName: name,
                   candidateEmail: email,
                   fileName: attachment.name,
