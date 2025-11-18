@@ -1,0 +1,129 @@
+Pasted-Create-an-AI-powered-CV-filtering-website-using-Next-js-with-integrated-OpenAI-API-and-email-inbox-c-1763482299321_1763482299322.txt
+Create an AI-powered CV filtering website using Next.js with integrated OpenAI API and email inbox connection (Gmail/Outlook).
+
+The system must allow HR or recruiters to:
+
+Log in using their company email (Gmail or Outlook)
+
+Automatically fetch CV attachments from their inbox
+
+Enter a job prompt / role description
+
+Use OpenAI API to analyze the CVs
+
+Score each resume from 0–100 based on the prompt
+
+Rank resumes from best to worst
+
+Display matches exactly given images
+
+there should be a dark mode also
+
+No documentation.
+No design work.
+Just a working functional product.
+
+🛠 TECH STACK (MANDATORY)
+
+You must use:
+
+Next.js (latest)
+
+TypeScript
+
+Tailwind CSS (basic styling only)
+
+NextAuth for login
+
+Google OAuth
+
+Microsoft Outlook OAuth
+
+OpenAI API (client provides key)
+
+Gmail API
+
+Microsoft Graph API
+
+Node-based file parsing tools
+
+pdf-parse
+
+docx
+
+Prisma ORM
+
+PostgreSQL
+
+No other tech stack unless required for email or CV extraction.
+
+📌 CORE FEATURES (STRICT SCOPE)
+1. Login System
+
+Implement login using:
+
+Google OAuth
+
+Microsoft Outlook OAuth
+
+After login → redirect to dashboard.
+
+2. Fetch CVs from Email Inbox
+
+Using Gmail API OR Microsoft Graph API:
+
+Connect using logged-in user’s access token
+
+Fetch inbox emails
+
+Detect emails with CV attachments (PDF, DOC, DOCX)
+
+Download attachments
+
+Extract text from each file
+
+Save extracted CV content into PostgreSQL
+
+Save original file link or buffer
+
+Only inbox fetching — no sending email, no advanced filtering.
+
+3. AI-Based CV Scoring
+
+User enters a job prompt.
+
+Using OpenAI API:
+
+Compare job prompt with each CV
+
+Score resume 0–100
+
+Generate short reasoning:
+
+Strengths (1–3 bullet points)
+
+Weaknesses (1–3 bullet points)
+
+Store results in the database
+
+4. Resume Ranking
+
+Automatically:
+
+Sort resumes from highest score to lowest
+
+Display them in a simple layout:
+
+Candidate name (from email or file)
+
+Score
+
+Strengths
+
+Weaknesses
+
+Button to view extracted text
+
+Button to download original CV
+
+Sorting must be automatic.
