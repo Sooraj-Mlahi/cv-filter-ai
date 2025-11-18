@@ -13,10 +13,15 @@ import { format } from "date-fns";
 
 type EmailProvider = {
   name: string;
-  icon: typeof SiGmail | typeof Inbox;
+  icon: string;
   color: string;
   status: "connected" | "not_connected";
   lastFetch?: string;
+};
+
+const iconMap: Record<string, React.ComponentType<any>> = {
+  "SiGmail": SiGmail,
+  "Inbox": Inbox,
 };
 
 export default function FetchCVs() {
@@ -99,12 +104,14 @@ export default function FetchCVs() {
               </Card>
             </>
           ) : (
-            providers?.map((provider) => (
+            providers?.map((provider) => {
+              const IconComponent = iconMap[provider.icon] || Mail;
+              return (
               <Card key={provider.name} data-testid={`card-provider-${provider.name.toLowerCase()}`}>
                 <CardContent className="pt-6">
                   <div className="flex items-start gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-md bg-card" style={{ border: '1px solid hsl(var(--border))' }}>
-                      <provider.icon className="h-6 w-6" style={{ color: provider.color }} />
+                      <IconComponent className="h-6 w-6" style={{ color: provider.color }} />
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
@@ -163,7 +170,7 @@ export default function FetchCVs() {
                   </div>
                 </CardContent>
               </Card>
-            ))
+            )})
           )}
         </div>
 
