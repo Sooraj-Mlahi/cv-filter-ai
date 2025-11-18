@@ -144,7 +144,12 @@ export default function Results() {
                         <span className="text-muted-foreground">Match Score</span>
                         <span className={`font-semibold ${getScoreColor(score)}`}>{score}%</span>
                       </div>
-                      <Progress value={score} className="h-2" indicatorClassName={getProgressColor(score)} />
+                      <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+                        <div 
+                          className={`h-full transition-all ${getProgressColor(score)}`}
+                          style={{ width: `${score}%` }}
+                        />
+                      </div>
                     </div>
 
                     {isExpanded && (

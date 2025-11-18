@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Mail, Download, CheckCircle2, XCircle, Loader2 } from "lucide-react";
-import { SiGmail, SiMicrosoftoutlook } from "react-icons/si";
+import { Mail, Download, CheckCircle2, XCircle, Loader2, Inbox } from "lucide-react";
+import { SiGmail } from "react-icons/si";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,7 @@ import { format } from "date-fns";
 
 type EmailProvider = {
   name: string;
-  icon: typeof SiGmail;
+  icon: typeof SiGmail | typeof Inbox;
   color: string;
   status: "connected" | "not_connected";
   lastFetch?: string;

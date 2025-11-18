@@ -48,6 +48,7 @@ export class MemStorage implements IStorage {
       ...insertCV,
       id,
       dateReceived: new Date(),
+      fileBuffer: insertCV.fileBuffer ?? null,
     };
     this.cvs.set(id, cv);
     return cv;
@@ -67,6 +68,8 @@ export class MemStorage implements IStorage {
       ...insertAnalysis,
       id,
       analyzedAt: new Date(),
+      strengths: insertAnalysis.strengths as string[],
+      weaknesses: insertAnalysis.weaknesses as string[],
     };
     this.analyses.set(id, analysis);
     return analysis;

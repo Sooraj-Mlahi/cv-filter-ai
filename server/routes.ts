@@ -61,7 +61,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const latestOutlook = await storage.getLatestFetchBySource("outlook");
         providers.push({
           name: "Outlook",
-          icon: "SiMicrosoftoutlook",
+          icon: "Inbox",
           color: "#0078D4",
           status: "connected",
           lastFetch: latestOutlook?.fetchedAt.toISOString(),
@@ -69,7 +69,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error) {
         providers.push({
           name: "Outlook",
-          icon: "SiMicrosoftoutlook",
+          icon: "Inbox",
           color: "#0078D4",
           status: "not_connected",
         });
