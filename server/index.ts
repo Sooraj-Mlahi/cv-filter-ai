@@ -1,8 +1,14 @@
+import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+
+// Set Express app environment based on NODE_ENV
+app.set('env', process.env.NODE_ENV || 'production');
+console.log('App environment:', app.get('env'));
+console.log('NODE_ENV:', process.env.NODE_ENV);
 
 declare module 'http' {
   interface IncomingMessage {

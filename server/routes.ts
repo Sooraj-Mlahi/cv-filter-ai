@@ -1,22 +1,33 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
-import { getUncachableGmailClient } from "./gmail-client";
-import { getUncachableOutlookClient } from "./outlook-client";
+import { setupAuth, isAuthenticated } from "./googleAuth";
+import { getGmailAuthUrl, setGmailTokens, isGmailConnected, getGmailClient } from "./gmail-auth";
+import { getOutlookAuthUrl, setOutlookTokens, isOutlookConnected, getOutlookClient } from "./outlook-auth";
 import { extractTextFromCV, extractCandidateInfo } from "./cv-extractor";
 import { analyzeCVWithOpenAI } from "./openai-service";
 import { z } from "zod";
+import { db } from "./db";
+import { cvs } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   await setupAuth(app);
 
+  // Health check endpoint
+  app.get("/api/health", (req, res) => {
+    res.json({ 
+      status: "ok", 
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'production'
+    });
+  });
+
   // Auth routes
   app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      const user = req.user;
       res.json(user);
     } catch (error) {
       console.error("Error fetching user:", error);
@@ -27,7 +38,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get dashboard stats (protected)
   app.get("/api/stats", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const stats = await storage.getDashboardStats(userId);
       res.json(stats);
     } catch (error) {
@@ -36,10 +47,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Email Provider Authentication Routes
+  app.get("/api/auth/gmail", isAuthenticated, (req, res) => {
+    const authUrl = getGmailAuthUrl();
+    res.redirect(authUrl);
+  });
+
+  app.get("/api/auth/callback/gmail", isAuthenticated, async (req: any, res) => {
+    try {
+      const { code } = req.query;
+      const userId = req.user.id;
+      
+      console.log(`Gmail callback: userId=${userId}, code=${code ? 'present' : 'missing'}`);
+      
+      await setGmailTokens(userId, code);
+      
+      console.log(`Gmail tokens set successfully, redirecting to dashboard`);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}?gmail_connected=true`);
+    } catch (error) {
+      console.error("Gmail auth error:", error);
+      console.log(`Gmail auth failed, redirecting to dashboard with error`);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}?error=gmail_auth_failed`);
+    }
+  });
+
+  app.get("/api/auth/outlook", isAuthenticated, (req, res) => {
+    const authUrl = getOutlookAuthUrl();
+    res.redirect(authUrl);
+  });
+
+  app.get("/api/auth/callback/outlook", isAuthenticated, async (req: any, res) => {
+    try {
+      const { code } = req.query;
+      const userId = req.user.id;
+      
+      await setOutlookTokens(userId, code);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}?outlook_connected=true`);
+    } catch (error) {
+      console.error("Outlook auth error:", error);
+      res.redirect("http://localhost:5000?error=outlook_auth_failed");
+    }
+  });
+
   // Get fetch history (protected)
   app.get("/api/fetch-history", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const history = await storage.getAllFetchHistory(userId);
       res.json(history);
     } catch (error) {
@@ -51,46 +107,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get email provider status (protected)
   app.get("/api/email-providers", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const providers = [];
 
       // Check Gmail connection
       try {
-        await getUncachableGmailClient();
-        const latestGmail = await storage.getLatestFetchBySource("gmail", userId);
-        providers.push({
-          name: "Gmail",
-          icon: "SiGmail",
-          color: "#EA4335",
-          status: "connected",
-          lastFetch: latestGmail?.fetchedAt.toISOString(),
-        });
+        if (isGmailConnected(userId)) {
+          const latestGmail = await storage.getLatestFetchBySource("gmail", userId);
+          providers.push({
+            name: "Gmail",
+            icon: "SiGmail",
+            color: "#EA4335",
+            status: "connected",
+            lastFetch: latestGmail?.fetchedAt.toISOString(),
+          });
+        } else {
+          providers.push({
+            name: "Gmail",
+            icon: "SiGmail",
+            color: "#EA4335",
+            status: "not_connected",
+            authUrl: "/api/auth/gmail"
+          });
+        }
       } catch (error) {
         providers.push({
           name: "Gmail",
           icon: "SiGmail",
           color: "#EA4335",
           status: "not_connected",
+          authUrl: "/api/auth/gmail"
         });
       }
 
       // Check Outlook connection
       try {
-        await getUncachableOutlookClient();
-        const latestOutlook = await storage.getLatestFetchBySource("outlook", userId);
-        providers.push({
-          name: "Outlook",
-          icon: "Inbox",
-          color: "#0078D4",
-          status: "connected",
-          lastFetch: latestOutlook?.fetchedAt.toISOString(),
-        });
+        if (isOutlookConnected(userId)) {
+          const latestOutlook = await storage.getLatestFetchBySource("outlook", userId);
+          providers.push({
+            name: "Outlook",
+            icon: "Inbox",
+            color: "#0078D4",
+            status: "connected",
+            lastFetch: latestOutlook?.fetchedAt.toISOString(),
+          });
+        } else {
+          providers.push({
+            name: "Outlook",
+            icon: "Inbox",
+            color: "#0078D4",
+            status: "not_connected",
+            authUrl: "/api/auth/outlook"
+          });
+        }
       } catch (error) {
         providers.push({
           name: "Outlook",
           icon: "Inbox",
           color: "#0078D4",
           status: "not_connected",
+          authUrl: "/api/auth/outlook"
         });
       }
 
@@ -104,16 +180,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Fetch CVs from email (protected)
   app.post("/api/fetch-cvs", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const schema = z.object({
         provider: z.enum(["gmail", "outlook"]),
+        daysBack: z.number().min(1).max(365).optional().default(30),
+        keywords: z.array(z.string()).optional().default([]),
       });
 
-      const { provider } = schema.parse(req.body);
+      const { provider, daysBack, keywords } = schema.parse(req.body);
       let count = 0;
 
       if (provider === "gmail") {
-        count = await fetchFromGmail(userId);
+        count = await fetchFromGmail(userId, daysBack, keywords);
       } else if (provider === "outlook") {
         count = await fetchFromOutlook(userId);
       }
@@ -137,7 +215,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Analyze CVs with AI (protected)
   app.post("/api/analyze-cvs", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const schema = z.object({
         jobDescription: z.string().min(10),
       });
@@ -195,7 +273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get analysis results (protected)
   app.get("/api/results", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const results = await storage.getCVsWithLatestAnalysis(userId);
       res.json(results);
     } catch (error) {
@@ -207,7 +285,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all analyses (protected)
   app.get("/api/analyses", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const analyses = await storage.getAllAnalyses(userId);
       res.json(analyses);
     } catch (error) {
@@ -219,7 +297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete account (protected)
   app.delete("/api/user/account", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       await storage.deleteUserAccount(userId);
       req.logout(() => {
         res.json({ message: "Account deleted successfully" });
@@ -233,7 +311,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete all CVs (protected)
   app.delete("/api/user/cvs", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       await storage.deleteAllCVs(userId);
       res.json({ message: "All CVs deleted successfully" });
     } catch (error) {
@@ -242,10 +320,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Download original CV file (protected)
+  app.get("/api/cv/:id/download", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.id;
+      
+      const cv = await storage.getCVById(id, userId);
+      if (!cv) {
+        return res.status(404).json({ error: "CV not found" });
+      }
+
+      if (!cv.fileBuffer) {
+        return res.status(404).json({ error: "Original file not available" });
+      }
+
+      // Set appropriate headers for file download
+      const fileExtension = cv.fileType === 'pdf' ? 'pdf' : 'docx';
+      const contentType = cv.fileType === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${cv.fileName || `resume.${fileExtension}`}"`);
+      
+      // Convert base64 back to buffer and send
+      const buffer = Buffer.from(cv.fileBuffer, 'base64');
+      res.send(buffer);
+    } catch (error) {
+      console.error("Error downloading CV:", error);
+      res.status(500).json({ error: "Failed to download CV" });
+    }
+  });
+
+  // Re-process existing CVs to extract real text (protected)
+  app.post("/api/reprocess-cvs", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const allCVs = await storage.getAllCVs(userId);
+      
+      let processedCount = 0;
+      
+      for (const cv of allCVs) {
+        if (cv.fileBuffer && cv.extractedText.includes('placeholder text for testing purposes')) {
+          try {
+            const buffer = Buffer.from(cv.fileBuffer, 'base64');
+            const newExtractedText = await extractTextFromCV(buffer, cv.fileType);
+            
+            // Update the CV with new extracted text
+            await db.update(cvs)
+              .set({ extractedText: newExtractedText })
+              .where(eq(cvs.id, cv.id));
+              
+            processedCount++;
+          } catch (error) {
+            console.error(`Failed to reprocess CV ${cv.id}:`, error);
+          }
+        }
+      }
+      
+      res.json({ 
+        message: `Successfully reprocessed ${processedCount} CV(s)`,
+        count: processedCount 
+      });
+    } catch (error) {
+      console.error("Error reprocessing CVs:", error);
+      res.status(500).json({ error: "Failed to reprocess CVs" });
+    }
+  });
+
   // Delete all analyses (protected)
   app.delete("/api/user/analyses", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       await storage.deleteAllAnalyses(userId);
       res.json({ message: "All analyses deleted successfully" });
     } catch (error) {
@@ -259,21 +404,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
 }
 
 // Helper function to fetch CVs from Gmail
-async function fetchFromGmail(userId: string): Promise<number> {
-  const gmail = await getUncachableGmailClient();
+async function fetchFromGmail(userId: string, daysBack: number = 30, customKeywords: string[] = []): Promise<number> {
+  const gmail = getGmailClient(userId);
   let count = 0;
 
   try {
-    // Search for emails with attachments in the last 30 days
-    const response = await gmail.users.messages.list({
-      userId: 'me',
-      q: 'has:attachment newer_than:30d',
-      maxResults: 50,
-    });
+    // Build search queries with date range and keywords
+    const dateFilter = `newer_than:${daysBack}d`;
+    const baseKeywords = ['resume', 'cv', 'curriculum vitae', 'application', 'job application'];
+    const allKeywords = [...baseKeywords, ...customKeywords];
+    
+    // More comprehensive search queries to catch different patterns
+    const searchQueries = [
+      // Basic attachment search with broader terms
+      `has:attachment ${dateFilter}`,
+      // Specific CV/resume terms
+      `(resume OR cv OR "curriculum vitae") ${dateFilter}`,
+      // Job application terms  
+      `(application OR "job application" OR "job posting") ${dateFilter}`,
+      // File-based searches
+      `filename:(.pdf OR .doc OR .docx) ${dateFilter}`,
+      // Subject line searches
+      `subject:(resume OR cv OR application) ${dateFilter}`,
+      // Combined searches
+      `has:attachment (resume OR cv) ${dateFilter}`,
+      `has:attachment (application OR intern OR position) ${dateFilter}`
+    ];
 
-    const messages = response.data.messages || [];
+    let allMessages: any[] = [];
 
-    for (const message of messages) {
+    console.log(`Searching with ${searchQueries.length} different queries for last ${daysBack} days...`);
+
+    // Search with multiple targeted queries to catch different CV patterns
+    for (let i = 0; i < searchQueries.length; i++) {
+      const query = searchQueries[i];
+      console.log(`Query ${i + 1}: ${query}`);
+      
+      const response = await gmail.users.messages.list({
+        userId: 'me',
+        q: query,
+        maxResults: 50,
+      });
+      
+      const messages = response.data.messages || [];
+      console.log(`Query ${i + 1} found ${messages.length} messages`);
+      allMessages = allMessages.concat(messages);
+    }
+
+    // Remove duplicates based on message ID
+    const uniqueMessages = Array.from(
+      new Map(allMessages.map(msg => [msg.id, msg])).values()
+    );
+
+    console.log(`Found ${uniqueMessages.length} potential CV emails`);
+
+    for (const message of uniqueMessages) {
       const msg = await gmail.users.messages.get({
         userId: 'me',
         id: message.id!,
@@ -282,12 +467,33 @@ async function fetchFromGmail(userId: string): Promise<number> {
       const parts = msg.data.payload?.parts || [];
       const headers = msg.data.payload?.headers || [];
       
-      const fromHeader = headers.find(h => h.name?.toLowerCase() === 'from');
+      const fromHeader = headers.find((h: any) => h.name?.toLowerCase() === 'from');
       const senderEmail = fromHeader?.value?.match(/<(.+?)>/) ? 
         fromHeader.value.match(/<(.+?)>/)![1] : 
         fromHeader?.value || 'unknown@example.com';
 
-      for (const part of parts) {
+      console.log(`Processing email from: ${senderEmail}, parts: ${parts.length}`);
+
+      // Function to recursively find attachments in nested parts
+      const findAttachments = (emailParts: any[]): any[] => {
+        let attachments: any[] = [];
+        for (const part of emailParts) {
+          if (part.filename && part.body?.attachmentId) {
+            attachments.push(part);
+          }
+          if (part.parts && Array.isArray(part.parts)) {
+            attachments = attachments.concat(findAttachments(part.parts));
+          }
+        }
+        return attachments;
+      };
+
+      const allAttachments = findAttachments(parts);
+      console.log(`Found ${allAttachments.length} total attachments in email`);
+
+      for (const part of allAttachments) {
+        console.log(`Checking part: ${part.filename}, mimeType: ${part.mimeType}, hasAttachment: ${!!part.body?.attachmentId}`);
+        
         if (part.filename && part.body?.attachmentId) {
           const filename = part.filename.toLowerCase();
           const mimeType = part.mimeType || '';
@@ -299,6 +505,8 @@ async function fetchFromGmail(userId: string): Promise<number> {
               mimeType.includes('pdf') ||
               mimeType.includes('word') ||
               mimeType.includes('document')) {
+            
+            console.log(`Processing CV attachment: ${part.filename}`);
             
             try {
               const attachment = await gmail.users.messages.attachments.get({
@@ -326,12 +534,42 @@ async function fetchFromGmail(userId: string): Promise<number> {
                 });
 
                 count++;
+                console.log(`Successfully created CV: ${part.filename} from ${senderEmail}`);
               }
             } catch (error) {
               console.error(`Error processing attachment ${part.filename}:`, error);
-              // Continue with next attachment
+              // Still try to save the CV even if text extraction failed
+              try {
+                const attachment = await gmail.users.messages.attachments.get({
+                  userId: 'me',
+                  messageId: message.id!,
+                  id: part.body.attachmentId,
+                });
+
+                if (attachment.data.data) {
+                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                  await storage.createCV({
+                    userId,
+                    candidateName: 'Unknown',
+                    candidateEmail: senderEmail,
+                    fileName: part.filename,
+                    fileType: filename.endsWith('.pdf') ? 'pdf' : 'docx',
+                    extractedText: `Text extraction failed: ${errorMessage}`,
+                    fileBuffer: attachment.data.data || null,
+                    source: 'Gmail',
+                  });
+                  count++;
+                  console.log(`Saved CV with extraction error: ${part.filename}`);
+                }
+              } catch (saveError) {
+                console.error(`Failed to save CV ${part.filename}:`, saveError);
+              }
             }
+          } else {
+            console.log(`Skipping non-CV attachment: ${part.filename} (${mimeType})`);
           }
+        } else {
+          console.log(`Skipping part without attachment: ${part.filename || 'unnamed'}`);
         }
       }
     }
@@ -345,7 +583,7 @@ async function fetchFromGmail(userId: string): Promise<number> {
 
 // Helper function to fetch CVs from Outlook
 async function fetchFromOutlook(userId: string): Promise<number> {
-  const outlook = await getUncachableOutlookClient();
+  const outlook = getOutlookClient(userId);
   let count = 0;
 
   try {

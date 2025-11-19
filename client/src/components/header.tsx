@@ -39,22 +39,26 @@ export function Header() {
     : user?.email?.[0]?.toUpperCase() || "U";
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 w-full border-b border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         <div className="flex items-center gap-8">
-          <Link href="/" className="flex items-center gap-2 hover-elevate active-elevate-2 rounded-md px-2 py-1 -ml-2" data-testid="link-home">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-              <FileText className="h-5 w-5 text-primary-foreground" />
+          <Link href="/" className="flex items-center gap-3 hover-elevate active-elevate-2 rounded-md px-2 py-1 -ml-2" data-testid="link-home">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
+              <FileText className="h-5 w-5 text-white" />
             </div>
-            <span className="text-xl font-semibold">ResumeRank</span>
+            <span className="text-xl font-semibold text-gray-900">ResumeRank</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
             {navigation.map((item) => (
               <Link key={item.path} href={item.path}>
                 <Button
-                  variant={location === item.path ? "secondary" : "ghost"}
-                  className="text-sm font-medium"
+                  variant="ghost"
+                  className={`text-sm font-medium ${
+                    location === item.path 
+                      ? "bg-gray-100 text-gray-900" 
+                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  }`}
                   data-testid={`link-nav-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
                 >
                   {item.name}
@@ -74,7 +78,7 @@ export function Header() {
                   {user?.profileImageUrl && (
                     <AvatarImage src={user.profileImageUrl} alt={user?.firstName || "User"} />
                   )}
-                  <AvatarFallback className="bg-primary text-primary-foreground text-sm font-medium">
+                  <AvatarFallback className="bg-blue-600 text-white text-sm font-medium">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
@@ -84,17 +88,17 @@ export function Header() {
               <div className="flex items-center justify-start gap-2 p-2">
                 <div className="flex flex-col space-y-1 leading-none">
                   {user?.firstName && user?.lastName && (
-                    <p className="font-medium text-sm">{user.firstName} {user.lastName}</p>
+                    <p className="font-medium text-sm text-gray-900">{user.firstName} {user.lastName}</p>
                   )}
                   {user?.email && (
-                    <p className="text-xs text-muted-foreground">{user.email}</p>
+                    <p className="text-xs text-gray-500">{user.email}</p>
                   )}
                 </div>
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem 
                 onClick={handleLogout}
-                className="text-destructive cursor-pointer"
+                className="text-red-600 cursor-pointer hover:bg-red-50"
                 data-testid="button-logout"
               >
                 <LogOut className="mr-2 h-4 w-4" />

@@ -20,6 +20,8 @@ export function log(message: string, source = "express") {
 }
 
 export async function setupVite(app: Express, server: Server) {
+  console.log('Setting up Vite middleware...');
+  
   const serverOptions = {
     middlewareMode: true,
     hmr: { server },
@@ -40,9 +42,23 @@ export async function setupVite(app: Express, server: Server) {
     appType: "custom",
   });
 
+  console.log('Vite server created, adding middlewares...');
   app.use(vite.middlewares);
-  app.use("*", async (req, res, next) => {
+  
+  // Only handle HTML requests, not assets
+  app.get("*", async (req, res, next) => {
     const url = req.originalUrl;
+    
+    // Skip API routes and assets (js, css, images, fonts, etc.)
+    if (url.startsWith('/api') || 
+        url.includes('.') || 
+        url.startsWith('/src/') ||
+        url.startsWith('/@') ||
+        url.startsWith('/node_modules/')) {
+      return next();
+    }
+    
+    console.log('Vite HTML handling:', url);
 
     try {
       const clientTemplate = path.resolve(
@@ -58,13 +74,17 @@ export async function setupVite(app: Express, server: Server) {
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid()}"`,
       );
+      console.log('Transforming HTML for:', url);
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
+      console.error('Vite transform error:', e);
       vite.ssrFixStacktrace(e as Error);
       next(e);
     }
   });
+  
+  console.log('Vite setup complete!');
 }
 
 export function serveStatic(app: Express) {
