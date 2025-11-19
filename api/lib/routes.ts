@@ -8,7 +8,7 @@ import { extractTextFromCV, extractCandidateInfo } from "./cv-extractor";
 import { analyzeCVWithOpenAI } from "./openai-service";
 import { z } from "zod";
 import { db } from "./db";
-import { cvs } from "./shared/schema";
+import { cvs } from "../shared/schema";
 import { eq } from "drizzle-orm";
 
 export async function registerRoutes(app: Express): Promise<Server> {

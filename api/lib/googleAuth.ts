@@ -43,7 +43,7 @@ export async function setupAuth(app: Express) {
     // Force account selection screen
     accessType: 'offline',
     prompt: 'select_account'
-  }, async (accessToken, refreshToken, profile, done) => {
+    async (accessToken: string, refreshToken: string, profile: any, done: any) => {
     try {
       // Create user object from Google profile
       const user = {

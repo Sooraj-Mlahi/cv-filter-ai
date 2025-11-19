@@ -18,7 +18,7 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
     }
     
     return extractedText;
-  } catch (error) {
+  } catch (error: any) {
     console.error('PDF extraction error:', error);
     return `PDF extraction failed: ${error.message}. The PDF might be password protected, corrupted, or image-based.`;
   }
@@ -28,7 +28,7 @@ export async function extractTextFromDOCX(buffer: Buffer): Promise<string> {
   try {
     const result = await mammoth.extractRawText({ buffer });
     return result.value;
-  } catch (error) {
+  } catch (error: any) {
     console.error('DOCX extraction error:', error);
     throw new Error('Failed to extract text from DOCX');
   }
